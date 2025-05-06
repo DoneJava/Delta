@@ -1,4 +1,5 @@
 ﻿using DELTAAPI.DTOs;
+using DELTAAPI.Model;
 using DELTAAPI.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,6 +17,9 @@ namespace DELTAAPI.Data
         public DbSet<Envio> Envios { get; set; }
         public DbSet<ImagemProduto> ImagemProdutos { get; set; }
         public DbSet<ProdutoDto> ProdutoDtoRaw { get; set; }
+        public DbSet<Contato> Contatos { get; set; }
+        public DbSet<Cupom> Cupons { get; set; }
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -92,8 +96,25 @@ namespace DELTAAPI.Data
                 .Property(p => p.StatusPagamento)
                 .HasConversion<int>();
 
+            modelBuilder.Entity<Contato>().ToTable("Contato");
+
 
             modelBuilder.Entity<ProdutoDto>().HasNoKey(); // ← necessário
+
+            modelBuilder.Entity<Cupom>()
+                .Property(c => c.Codigo)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            modelBuilder.Entity<Cupom>()
+                .Property(c => c.DescontoPorcentagem)
+                .IsRequired(false);
+
+            modelBuilder.Entity<Cupom>()
+                .Property(c => c.DescontoValor)
+                .HasPrecision(18, 2)
+                .IsRequired(false);
+
 
             // Mapear explicitamente o nome das tabelas (caso seja necessário)
             modelBuilder.Entity<Cliente>().ToTable("Cliente");

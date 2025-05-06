@@ -20,7 +20,7 @@ namespace DELTAAPI.Controllers
         #region Constructor
         public ProdutoController(DeltaContext context)
         {
-            _context = context;
+            _context = context; 
         }
         #endregion
 
@@ -46,7 +46,8 @@ namespace DELTAAPI.Controllers
                         Estoque = p.Estoque,
                         DataCadastro = p.DataCadastro,
                         Categorias = p.Categorias,  
-                        ImagemUrl = $"{Request.Scheme}://{Request.Host}/api/produto/imagem-arquivo/{Path.GetFileName(p.ImagemPrincipal)}"
+                        ImagemUrl = $"{Request.Scheme}://{Request.Host}/api/produto/imagem-arquivo/{Path.GetFileName(p.ImagemPrincipal)}",
+                        Destaque = p.Destaque,
                     })
                     .ToList();
 
@@ -59,53 +60,43 @@ namespace DELTAAPI.Controllers
         }
         #endregion
 
-        #region GET by ID
-        [HttpGet("obter-por-id/{id}")]
-        public async Task<ActionResult<ProdutoDto>> ObterProdutoPorId(int id)
+        #region GET Destaques
+        [HttpGet("obter-destaques")]
+        public async Task<ActionResult<IEnumerable<ProdutoDto>>> ObterDestaquesProdutos()
         {
             try
             {
-                SqlParameter param = new SqlParameter("@ProdutoID", id);
-
-                List<Produto> produtos = await _context.Produtos
-                    .FromSqlRaw("EXEC ObterProdutoPorID @ProdutoID", param)
+                // Executa o procedimento armazenado para obter os produtos destaque
+                List<Produto> produtosRaw = await _context.Produtos
+                    .FromSqlRaw("EXEC ListarProdutosDestaques")
                     .AsNoTracking()
                     .ToListAsync();
 
-                Produto? dto = produtos.FirstOrDefault();
+                List<ProdutoDto> produtos = produtosRaw
+                    .Select(p => new ProdutoDto
+                    {
+                        ProdutoID = p.ProdutoID,
+                        Nome = p.Nome,
+                        Descricao = p.Descricao,
+                        Preco = p.Preco,
+                        Estoque = p.Estoque,
+                        DataCadastro = p.DataCadastro,
+                        Categorias = p.Categorias,
+                        ImagemUrl = $"{Request.Scheme}://{Request.Host}/api/produto/imagem-arquivo/{Path.GetFileName(p.ImagemPrincipal)}",
+                        Destaque = p.Destaque,
+                    })
+                    .ToList();
 
-                if (dto == null)
-                    return NotFound("Produto não encontrado.");
-
-                // Corrigido: usa o mesmo padrão do método ObterTodosProdutos
-                if (!string.IsNullOrEmpty(dto.ImagemPrincipal))
-                {
-                    var fileName = Path.GetFileName(dto.ImagemPrincipal);
-                    dto.ImagemPrincipal = $"{Request.Scheme}://{Request.Host}/api/produto/imagem-arquivo/{fileName}";
-                }
-
-                // Adicionando as categorias como string separada por ";"
-                var categorias = dto.Categorias?.Split(';').Select(c => c.Trim()).ToList();
-                var categoriasString = categorias != null ? string.Join(";", categorias) : "Sem categoria";
-
-                return Ok(new ProdutoDto
-                {
-                    ProdutoID = dto.ProdutoID,
-                    Nome = dto.Nome,
-                    Descricao = dto.Descricao,
-                    Preco = dto.Preco,
-                    Estoque = dto.Estoque,
-                    DataCadastro = dto.DataCadastro,
-                    Categorias = categoriasString, // As categorias como string separada por ";"
-                    ImagemUrl = dto.ImagemPrincipal
-                });
+                return Ok(produtos);
             }
             catch
             {
                 return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
             }
         }
+        #endregion
 
+        #region GET imagem-arquivo
         [HttpGet("imagem-arquivo/{nomeArquivo}")]
         public IActionResult ObterImagemArquivo(string nomeArquivo)
         {

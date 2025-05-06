@@ -5,6 +5,7 @@ using DELTAAPI.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 #endregion
 
 namespace DELTAAPI.Controllers
@@ -199,5 +200,60 @@ namespace DELTAAPI.Controllers
             }
         }
         #endregion
+
+        #region POST Registrar Contato
+        [HttpPost("registrar-contato")]
+        public async Task<IActionResult> RegistrarContato([FromBody] ContatoDto dto)
+        {
+            try
+            {
+                Int32? clienteId = null;
+                Int32? pedidoId = null;
+
+                // Verificar token do cookie
+                if (Request.Cookies.TryGetValue("token", out string? tokenStr) && !String.IsNullOrWhiteSpace(tokenStr))
+                {
+                    if (Guid.TryParse(tokenStr, out Guid token))
+                    {
+                        Cliente? cliente = await _context.Clientes
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(c => c.Token == token && c.ValidadeToken > DateTime.UtcNow);
+
+                        if (cliente != null)
+                            clienteId = cliente.ClienteID;
+                    }
+                }
+
+                // Verificar se há um ID de pedido nos colchetes
+                Match match = Regex.Match(dto.Assunto + " " + dto.Mensagem, "\\[(\\d+)\\]");
+                if (match.Success && Int32.TryParse(match.Groups[1].Value, out Int32 idPedidoEncontrado))
+                {
+                    Boolean pedidoExiste = await _context.Pedidos
+                        .AsNoTracking()
+                        .AnyAsync(p => p.PedidoID == idPedidoEncontrado);
+
+                    if (pedidoExiste)
+                        pedidoId = idPedidoEncontrado;
+                }
+
+                await _context.Database.ExecuteSqlRawAsync(
+                    "EXEC RegistrarContato @Nome, @Email, @Assunto, @Mensagem, @ClienteId, @PedidoId",
+                    new SqlParameter("@Nome", dto.Nome),
+                    new SqlParameter("@Email", dto.Email),
+                    new SqlParameter("@Assunto", dto.Assunto),
+                    new SqlParameter("@Mensagem", dto.Mensagem),
+                    new SqlParameter("@ClienteId", clienteId.HasValue ? clienteId : (object)DBNull.Value),
+                    new SqlParameter("@PedidoId", pedidoId.HasValue ? pedidoId : (object)DBNull.Value)
+                );
+
+                return Ok("Contato registrado com sucesso.");
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
+            }
+        }
+        #endregion
+
     }
 }

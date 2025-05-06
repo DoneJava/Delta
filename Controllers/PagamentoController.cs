@@ -142,6 +142,66 @@ namespace DELTAAPI.Controllers
         }
         #endregion
 
+        #region POST - Validar Cupom
+        [HttpPost("validarCupom")]
+        public async Task<IActionResult> ValidarCupom([FromBody] CupomDto dto)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(dto.Codigo))
+                    return BadRequest("Código do cupom não pode ser vazio.");
+
+                SqlParameter paramCodigo = new SqlParameter("@Codigo", dto.Codigo);
+
+                SqlParameter paramValido = new SqlParameter
+                {
+                    ParameterName = "@Valido",
+                    SqlDbType = System.Data.SqlDbType.Bit,
+                    Direction = System.Data.ParameterDirection.Output
+                };
+
+                SqlParameter paramPorcentagem = new SqlParameter
+                {
+                    ParameterName = "@DescontoPorcentagem",
+                    SqlDbType = System.Data.SqlDbType.Int,
+                    Direction = System.Data.ParameterDirection.Output
+                };
+
+                SqlParameter paramValor = new SqlParameter
+                {
+                    ParameterName = "@DescontoValor",
+                    SqlDbType = System.Data.SqlDbType.Decimal,
+                    Precision = 18,
+                    Scale = 2,
+                    Direction = System.Data.ParameterDirection.Output
+                };
+
+                await _context.Database.ExecuteSqlRawAsync(
+                    "EXEC ValidarCupom @Codigo, @Valido OUTPUT, @DescontoPorcentagem OUTPUT, @DescontoValor OUTPUT",
+                    paramCodigo, paramValido, paramPorcentagem, paramValor
+                );
+
+                CupomResultadoDto resultado = new CupomResultadoDto
+                {
+                    Valido = (bool)(paramValido.Value ?? false),
+                    DescontoPorcentagem = paramPorcentagem.Value != DBNull.Value ? (int)paramPorcentagem.Value : 0,
+                    DescontoValor = paramValor.Value != DBNull.Value ? (decimal)paramValor.Value : 0
+                };
+
+                return Ok(resultado);
+            }
+            catch (SqlException ex)
+            {
+                return StatusCode(500, $"Erro ao validar cupom: {ex.Message}");
+            }
+            catch
+            {
+                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
+            }
+        }
+        #endregion
+
+
         #region POST Estornar
         [HttpPost("estornar/{id}")]
         public async Task<IActionResult> EstornarPagamento(int id)
