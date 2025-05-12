@@ -19,6 +19,7 @@ namespace DELTAAPI.Data
         public DbSet<ProdutoDto> ProdutoDtoRaw { get; set; }
         public DbSet<Contato> Contatos { get; set; }
         public DbSet<Cupom> Cupons { get; set; }
+        public DbSet<TokenMelhorEnvio> TokenMelhorEnvio { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -114,6 +115,17 @@ namespace DELTAAPI.Data
                 .Property(c => c.DescontoValor)
                 .HasPrecision(18, 2)
                 .IsRequired(false);
+
+            modelBuilder.Entity<TokenMelhorEnvio>(entity =>
+            {
+                entity.ToTable("TokenMelhorEnvio");
+                entity.HasKey(t => t.Id);
+                entity.Property(t => t.AccessToken).IsRequired().HasMaxLength(1000);
+                entity.Property(t => t.RefreshToken).IsRequired().HasMaxLength(1000);
+                entity.Property(t => t.Expiracao).IsRequired();
+                entity.Property(t => t.CriadoEm).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(t => t.AtualizadoEm).HasDefaultValueSql("GETUTCDATE()");
+            });
 
 
             // Mapear explicitamente o nome das tabelas (caso seja necessário)
