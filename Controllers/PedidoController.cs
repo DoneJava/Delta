@@ -2,6 +2,7 @@
 using DELTAAPI.Data;
 using DELTAAPI.DTOs;
 using DELTAAPI.Models;
+using DELTAAPI.Service;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -15,162 +16,61 @@ namespace DELTAAPI.Controllers
     public class PedidoController : ControllerBase
     {
         #region Fields
-        private readonly DeltaContext _context;
+        private PedidoService _PedidoService;
         #endregion
 
         #region Constructor
-        public PedidoController(DeltaContext context)
+        public PedidoController(PedidoService pedidoService)
         {
-            _context = context;
+            _PedidoService = pedidoService;
         }
         #endregion
 
         #region GET All
         [HttpGet("obter-todos")]
-        public async Task<ActionResult<IEnumerable<PedidoDto>>> ObterTodosPedidos()
+        public async Task<IActionResult> ObterTodosPedidos()
         {
-            try
-            {
-                List<Pedido> pedidosRaw = await _context.Pedidos
-                    .FromSqlRaw("EXEC ListarPedidos")
-                    .AsNoTracking()
-                    .ToListAsync();
+            var retornoDTO = await _PedidoService.ObterTodosPedidos();
 
-                List<Cliente> clientes = await _context.Clientes
-                    .AsNoTracking()
-                    .ToListAsync();
-
-                List<PedidoDto> pedidos = pedidosRaw
-                    .Join(clientes,
-                        pedido => pedido.ClienteID,
-                        cliente => cliente.ClienteID,
-                        (pedido, cliente) => new PedidoDto
-                        {
-                            PedidoID = pedido.PedidoID,
-                            ClienteID = pedido.ClienteID,
-                            NomeCliente = cliente.Nome,
-                            DataPedido = pedido.DataPedido,
-                            Status = pedido.Status,
-                            ValorTotal = pedido.ValorTotal
-                        })
-                    .ToList();
-
-                return Ok(pedidos);
-            }
-            catch
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
+                                   : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
         #endregion
 
         #region GET by ID
         [HttpGet("obter-por-id/{id}")]
-        public async Task<ActionResult<PedidoDto>> ObterPedidoPorId(int id)
+        public async Task<IActionResult> ObterPedidoPorId(int id)
         {
-            try
-            {
-                SqlParameter parametro = new SqlParameter("@PedidoID", id);
+            var retornoDTO = await _PedidoService.ObterPedidoPorId(id);
 
-                List<Pedido> pedidos = await _context.Pedidos
-                    .FromSqlRaw("EXEC ObterPedidoPorID @PedidoID", parametro)
-                    .AsNoTracking()
-                    .ToListAsync();
-
-                Pedido? pedido = pedidos.FirstOrDefault();
-
-                if (pedido == null)
-                    return NotFound("Pedido não encontrado.");
-
-                Cliente? cliente = await _context.Clientes
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(c => c.ClienteID == pedido.ClienteID);
-
-                PedidoDto dto = new PedidoDto
-                {
-                    PedidoID = pedido.PedidoID,
-                    ClienteID = pedido.ClienteID,
-                    NomeCliente = cliente?.Nome ?? string.Empty,
-                    DataPedido = pedido.DataPedido,
-                    Status = pedido.Status,
-                    ValorTotal = pedido.ValorTotal
-                };
-
-                return Ok(dto);
-            }
-            catch
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
+                                   : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
         #endregion
 
-        #region POST
+        #region POST Criar
         [HttpPost("criar")]
         public async Task<IActionResult> CriarPedido([FromBody] PedidoCreateDto dto)
         {
-            try
-            {
-                Boolean clienteExiste = await _context.Clientes
-                    .AsNoTracking()
-                    .AnyAsync(c => c.ClienteID == dto.ClienteID);
+            var retornoDTO = await _PedidoService.CriarPedido(dto);
 
-                if (!clienteExiste)
-                    return NotFound("Cliente informado não existe.");
-
-                await _context.Database.ExecuteSqlRawAsync(
-                    "EXEC InserirPedido @ClienteID, @Status, @ValorTotal",
-                    new SqlParameter("@ClienteID", dto.ClienteID),
-                    new SqlParameter("@Status", dto.Status),
-                    new SqlParameter("@ValorTotal", dto.ValorTotal)
-                );
-
-                return Ok("Pedido criado com sucesso.");
-            }
-            catch
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso ? new { mensagem = retornoDTO.Mensagem }
+                                   : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
         #endregion
 
-        #region PUT
+        #region PUT Atualizar
         [HttpPut("atualizar/{id}")]
         public async Task<IActionResult> AtualizarPedido(int id, [FromBody] PedidoUpdateDto dto)
         {
-            if (id != dto.PedidoID)
-                return BadRequest("ID inconsistente.");
+            var retornoDTO = await _PedidoService.AtualizarPedido(id, dto);
 
-            try
-            {
-                Boolean clienteExiste = await _context.Clientes
-                    .AsNoTracking()
-                    .AnyAsync(c => c.ClienteID == dto.ClienteID);
-
-                if (!clienteExiste)
-                    return NotFound("Cliente informado não existe.");
-
-                Int32 linhasAfetadas = await _context.Database.ExecuteSqlRawAsync(
-                    "EXEC AtualizarPedido @PedidoID, @ClienteID, @Status, @ValorTotal",
-                    new SqlParameter("@PedidoID", dto.PedidoID),
-                    new SqlParameter("@ClienteID", dto.ClienteID),
-                    new SqlParameter("@Status", dto.Status),
-                    new SqlParameter("@ValorTotal", dto.ValorTotal)
-                );
-
-                if (linhasAfetadas == 0)
-                    return NotFound("Pedido não encontrado para atualização.");
-
-                return Ok("Pedido atualizado com sucesso.");
-            }
-            catch (SqlException excecao) when (excecao.Number == 50000 || excecao.Number == 547)
-            {
-                return BadRequest("Erro de integridade: " + excecao.Message);
-            }
-            catch
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso ? new { mensagem = retornoDTO.Mensagem }
+                                   : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
         #endregion
 
@@ -178,26 +78,11 @@ namespace DELTAAPI.Controllers
         [HttpDelete("deletar/{id}")]
         public async Task<IActionResult> ExcluirPedido(int id)
         {
-            try
-            {
-                Int32 linhasAfetadas = await _context.Database.ExecuteSqlRawAsync(
-                    "EXEC DeletarPedido @PedidoID",
-                    new SqlParameter("@PedidoID", id)
-                );
+            var retornoDTO = await _PedidoService.ExcluirPedido(id);
 
-                if (linhasAfetadas == 0)
-                    return NotFound("Pedido não encontrado para exclusão.");
-
-                return Ok("Pedido deletado com sucesso.");
-            }
-            catch (SqlException excecao) when (excecao.Number == 547)
-            {
-                return BadRequest("Não é possível excluir o pedido: ele está relacionado a outros dados.");
-            }
-            catch
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso ? new { mensagem = retornoDTO.Mensagem }
+                                   : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
         #endregion
 
@@ -205,55 +90,28 @@ namespace DELTAAPI.Controllers
         [HttpPost("registrar-contato")]
         public async Task<IActionResult> RegistrarContato([FromBody] ContatoDto dto)
         {
-            try
-            {
-                Int32? clienteId = null;
-                Int32? pedidoId = null;
+            string? tokenStr = null;
+            if (Request.Cookies.TryGetValue("token", out string? cookieToken))
+                tokenStr = cookieToken;
 
-                // Verificar token do cookie
-                if (Request.Cookies.TryGetValue("token", out string? tokenStr) && !String.IsNullOrWhiteSpace(tokenStr))
-                {
-                    if (Guid.TryParse(tokenStr, out Guid token))
-                    {
-                        Cliente? cliente = await _context.Clientes
-                            .AsNoTracking()
-                            .FirstOrDefaultAsync(c => c.Token == token && c.ValidadeToken > DateTime.UtcNow);
+            var retornoDTO = await _PedidoService.RegistrarContato(dto, tokenStr);
 
-                        if (cliente != null)
-                            clienteId = cliente.ClienteID;
-                    }
-                }
-
-                // Verificar se há um ID de pedido nos colchetes
-                Match match = Regex.Match(dto.Assunto + " " + dto.Mensagem, "\\[(\\d+)\\]");
-                if (match.Success && Int32.TryParse(match.Groups[1].Value, out Int32 idPedidoEncontrado))
-                {
-                    Boolean pedidoExiste = await _context.Pedidos
-                        .AsNoTracking()
-                        .AnyAsync(p => p.PedidoID == idPedidoEncontrado);
-
-                    if (pedidoExiste)
-                        pedidoId = idPedidoEncontrado;
-                }
-
-                await _context.Database.ExecuteSqlRawAsync(
-                    "EXEC RegistrarContato @Nome, @Email, @Assunto, @Mensagem, @ClienteId, @PedidoId",
-                    new SqlParameter("@Nome", dto.Nome),
-                    new SqlParameter("@Email", dto.Email),
-                    new SqlParameter("@Assunto", dto.Assunto),
-                    new SqlParameter("@Mensagem", dto.Mensagem),
-                    new SqlParameter("@ClienteId", clienteId.HasValue ? clienteId : (object)DBNull.Value),
-                    new SqlParameter("@PedidoId", pedidoId.HasValue ? pedidoId : (object)DBNull.Value)
-                );
-
-                return Ok("Contato registrado com sucesso.");
-            }
-            catch (Exception)
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso ? new { mensagem = retornoDTO.Mensagem }
+                                   : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
         #endregion
 
+        #region Meus pedidos
+        [HttpGet("do-cliente/{clienteId}")]
+        public async Task<IActionResult> ObterPedidosDoCliente(int clienteId)
+        {
+            var retornoDTO = await _PedidoService.ObterPedidosDoCliente(clienteId);
+
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
+                                   : new { sucesso = false, mensagem = retornoDTO.Mensagem });
+        }
+        #endregion
     }
 }

@@ -1,4 +1,5 @@
 using DELTAAPI.Data;
+using DELTAAPI.Service;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -25,6 +26,13 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
+
+builder.Services.AddScoped<ClienteService>();
+builder.Services.AddScoped<EnvioService>();
+builder.Services.AddScoped<ItemPedidoService>();
+builder.Services.AddScoped<PagamentoService>();
+builder.Services.AddScoped<PedidoService>();
+builder.Services.AddScoped<ProdutoService>();
 
 var app = builder.Build();
 

@@ -7,6 +7,7 @@
         public DateTime DataPedido { get; set; } = DateTime.Now;
         public string Status { get; set; }
         public decimal ValorTotal { get; set; }
+        public decimal ValorFrete { get; set; }
         public Cliente Cliente { get; set; }
     }
 }

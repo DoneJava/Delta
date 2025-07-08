@@ -1,7 +1,9 @@
 ﻿#region Usings
 using DELTAAPI.Data;
 using DELTAAPI.DTOs;
+using DELTAAPI.Model;
 using DELTAAPI.Models;
+using DELTAAPI.Service;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -14,142 +16,75 @@ namespace DELTAAPI.Controllers
     public class EnvioController : ControllerBase
     {
         #region Fields
-        private readonly DeltaContext _context;
+        private EnvioService _EnvioService;
         #endregion
 
         #region Constructor
-        public EnvioController(DeltaContext context)
+        public EnvioController(EnvioService clienteService)
         {
-            _context = context;
+            _EnvioService = clienteService;
         }
         #endregion
 
         #region GET All
         [HttpGet("obter-todos")]
-        public async Task<ActionResult<IEnumerable<EnvioDto>>> ObterTodosEnvios()
+        public async Task<IActionResult> ObterTodosEnvios()
         {
-            try
+            RetornoDTO retornoDTO = await _EnvioService.ObterTodosEnvios();
+
+            if (!retornoDTO.Sucesso)
             {
-                List<Envio> enviosRaw = await _context.Envios
-                    .FromSqlRaw("EXEC ListarEnvios")
-                    .AsNoTracking()
-                    .ToListAsync();
-
-                List<Pedido> pedidos = await _context.Pedidos
-                    .AsNoTracking()
-                    .ToListAsync();
-
-                List<EnvioDto> envios = enviosRaw
-                    .Join(pedidos,
-                        e => e.PedidoID,
-                        p => p.PedidoID,
-                        (e, p) => new EnvioDto
-                        {
-                            EnvioID = e.EnvioID,
-                            PedidoID = e.PedidoID,
-                            MetodoEnvio = e.MetodoEnvio,
-                            StatusEnvio = e.StatusEnvio,
-                            CodigoRastreamento = e.CodigoRastreamento,
-                            DataEnvio = e.DataEnvio
-                        })
-                    .ToList();
-
-                return Ok(envios);
+                return StatusCode((int)retornoDTO.Status, new
+                {
+                    mensagem = retornoDTO.Mensagem
+                });
             }
-            catch
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+
+            return StatusCode((int)retornoDTO.Status, retornoDTO.Objeto);
         }
         #endregion
 
         #region GET by ID
         [HttpGet("obter-por-id/{id}")]
-        public async Task<ActionResult<EnvioDto>> ObterEnvioPorId(int id)
+        public async Task<IActionResult> ObterEnvioPorId(int id)
         {
-            try
+            RetornoDTO retornoDTO = await _EnvioService.ObterEnvioPorId(id);
+
+            if (!retornoDTO.Sucesso)
             {
-                SqlParameter param = new SqlParameter("@EnvioID", id);
-
-                List<Envio> envios = await _context.Envios
-                    .FromSqlRaw("EXEC ObterEnvioPorID @EnvioID", param)
-                    .AsNoTracking()
-                    .ToListAsync();
-
-                Envio? envio = envios.FirstOrDefault();
-
-                if (envio == null)
-                    return NotFound("Envio não encontrado.");
-
-                EnvioDto dto = new EnvioDto
+                return StatusCode((int)retornoDTO.Status, new
                 {
-                    EnvioID = envio.EnvioID,
-                    PedidoID = envio.PedidoID,
-                    MetodoEnvio = envio.MetodoEnvio,
-                    StatusEnvio = envio.StatusEnvio,
-                    CodigoRastreamento = envio.CodigoRastreamento,
-                    DataEnvio = envio.DataEnvio
-                };
+                    mensagem = retornoDTO.Mensagem
+                });
+            }
 
-                return Ok(dto);
-            }
-            catch
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+            return StatusCode((int)retornoDTO.Status, retornoDTO.Objeto);
         }
         #endregion
 
-        #region POST
+        #region POST Criar
         [HttpPost("criar")]
         public async Task<IActionResult> CriarEnvio([FromBody] EnvioCreateDto dto)
         {
-            try
-            {
-                await _context.Database.ExecuteSqlRawAsync(
-                    "EXEC InserirEnvio @PedidoID, @MetodoEnvio, @StatusEnvio, @CodigoRastreamento",
-                    new SqlParameter("@PedidoID", dto.PedidoID),
-                    new SqlParameter("@MetodoEnvio", dto.MetodoEnvio),
-                    new SqlParameter("@StatusEnvio", dto.StatusEnvio),
-                    new SqlParameter("@CodigoRastreamento", dto.CodigoRastreamento)
-                );
+            RetornoDTO retornoDTO = await _EnvioService.CriarEnvio(dto);
 
-                return Ok("Envio criado com sucesso.");
-            }
-            catch
+            return StatusCode((int)retornoDTO.Status, new
             {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+                mensagem = retornoDTO.Mensagem
+            });
         }
         #endregion
 
-        #region PUT
+        #region PUT Atualizar
         [HttpPut("atualizar/{id}")]
         public async Task<IActionResult> AtualizarEnvio(int id, [FromBody] EnvioUpdateDto dto)
         {
-            if (id != dto.EnvioID)
-                return BadRequest("ID inconsistente.");
+            RetornoDTO retornoDTO = await _EnvioService.AtualizarEnvio(id, dto);
 
-            try
+            return StatusCode((int)retornoDTO.Status, new
             {
-                int linhasAfetadas = await _context.Database.ExecuteSqlRawAsync(
-                    "EXEC AtualizarEnvio @EnvioID, @PedidoID, @MetodoEnvio, @StatusEnvio, @CodigoRastreamento",
-                    new SqlParameter("@EnvioID", dto.EnvioID),
-                    new SqlParameter("@PedidoID", dto.PedidoID),
-                    new SqlParameter("@MetodoEnvio", dto.MetodoEnvio),
-                    new SqlParameter("@StatusEnvio", dto.StatusEnvio),
-                    new SqlParameter("@CodigoRastreamento", dto.CodigoRastreamento)
-                );
-
-                if (linhasAfetadas == 0)
-                    return NotFound("Envio não encontrado para atualização.");
-
-                return Ok("Envio atualizado com sucesso.");
-            }
-            catch
-            {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+                mensagem = retornoDTO.Mensagem
+            });
         }
         #endregion
 
@@ -157,22 +92,12 @@ namespace DELTAAPI.Controllers
         [HttpDelete("deletar/{id}")]
         public async Task<IActionResult> DeletarEnvio(int id)
         {
-            try
-            {
-                int linhasAfetadas = await _context.Database.ExecuteSqlRawAsync(
-                    "EXEC DeletarEnvio @EnvioID",
-                    new SqlParameter("@EnvioID", id)
-                );
+            RetornoDTO retornoDTO = await _EnvioService.DeletarEnvio(id);
 
-                if (linhasAfetadas == 0)
-                    return NotFound("Envio não encontrado para exclusão.");
-
-                return Ok("Envio deletado com sucesso.");
-            }
-            catch
+            return StatusCode((int)retornoDTO.Status, new
             {
-                return StatusCode(500, "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!");
-            }
+                mensagem = retornoDTO.Mensagem
+            });
         }
         #endregion
     }

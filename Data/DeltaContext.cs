@@ -20,6 +20,8 @@ namespace DELTAAPI.Data
         public DbSet<Contato> Contatos { get; set; }
         public DbSet<Cupom> Cupons { get; set; }
         public DbSet<TokenMelhorEnvio> TokenMelhorEnvio { get; set; }
+        public DbSet<PedidoDto> PedidtosDto { get; set; }
+        public DbSet<ItemDto> ItemDto { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -101,6 +103,7 @@ namespace DELTAAPI.Data
 
 
             modelBuilder.Entity<ProdutoDto>().HasNoKey(); // ← necessário
+            modelBuilder.Entity<ItemDto>().HasNoKey(); // ← necessário
 
             modelBuilder.Entity<Cupom>()
                 .Property(c => c.Codigo)
