@@ -388,7 +388,7 @@ namespace DELTAAPI.Service
                 }
 
                 Guid token = Guid.NewGuid();
-                DateTime validade = DateTime.UtcNow.AddHours(1);
+                DateTime validade = DateTime.UtcNow.AddYears(1);
 
                 cliente.Token = token;
                 cliente.ValidadeToken = validade;

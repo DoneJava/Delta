@@ -1,12 +1,8 @@
 ﻿#region Usings
-using DELTAAPI.Data;
 using DELTAAPI.DTOs;
 using DELTAAPI.Model;
-using DELTAAPI.Models;
 using DELTAAPI.Service;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
 #endregion
 
 namespace DELTAAPI.Controllers

@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema; // Importante para [NotMapped]
 
 namespace DELTAAPI.DTOs
@@ -18,12 +19,22 @@ namespace DELTAAPI.DTOs
         public List<ItemDto> Itens { get; set; } = new List<ItemDto>();  // Inicialize para evitar null
     }
 
+    [Keyless]
     public class ItemDto
     {
-        public string Nome { get; set; }
-        public string Tamanho { get; set; }
+        public int ItemPedidoID { get; set; }
+        public int ProdutoID { get; set; }
         public int Quantidade { get; set; }
-        public decimal Preco { get; set; }
-        public string ImagemUrl { get; set; }
+        public decimal PrecoUnitario { get; set; }   // <- tenha este nome
+        public string Nome { get; set; } = "";
+        public string ImagemPrincipal { get; set; } = "";
+        public string? TamanhosDisponiveis { get; set; }
+    }
+
+
+    [Keyless]
+    public class ClienteIdDto
+    {
+        public int ClienteId { get; set; }
     }
 }

@@ -34,6 +34,7 @@ builder.Services.AddScoped<PagamentoService>();
 builder.Services.AddScoped<PedidoService>();
 builder.Services.AddScoped<ProdutoService>();
 
+
 var app = builder.Build();
 
 app.UseCors(); // Antes de app.UseAuthorization()

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("DELTAAPI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9f4975b89bdc1e86306e1028f1ec294a1aa73797")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3f34c562f04490117c316fc6517c75cd7165e6ee")]
 [assembly: System.Reflection.AssemblyProductAttribute("DELTAAPI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("DELTAAPI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

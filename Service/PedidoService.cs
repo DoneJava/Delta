@@ -56,7 +56,7 @@ namespace DELTAAPI.Service
                         {
                             PedidoID = pedido.PedidoID,
                             ClienteID = pedido.ClienteID,
-                            NomeCliente = cliente.Nome,
+                            NomeCliente = cliente.Nome ?? "Nome não encontrado",
                             DataPedido = pedido.DataPedido,
                             Status = pedido.Status,
                             ValorTotal = pedido.ValorTotal
@@ -371,40 +371,25 @@ namespace DELTAAPI.Service
         {
             try
             {
-                var paramCliente = new SqlParameter("@ClienteID", clienteId);
-
-                var pedidos = await _context.Set<PedidoDto>()
-                    .FromSqlRaw("EXEC ListarPedidosPorClienteID @ClienteID", paramCliente)
+                SqlParameter pCliente = new SqlParameter("@ClienteID", clienteId);
+                List<PedidoCompletoDto> rows = await _context.Set<PedidoCompletoDto>()
+                    .FromSqlRaw("EXEC ListarPedidosCompletoPorClienteID @ClienteID", pCliente)
                     .AsNoTracking()
                     .ToListAsync();
 
-                foreach (var pedido in pedidos)
+                foreach (var r in rows)
                 {
-                    var paramPedido = new SqlParameter("@PedidoID", pedido.PedidoID);
-
-                    var itens = await _context.Set<ItemDto>()
-                        .FromSqlRaw("EXEC ListarItensPorPedidoID @PedidoID", paramPedido)
-                        .AsNoTracking()
-                        .ToListAsync();
-
-                    pedido.Itens = itens;
+                    r.Itens = string.IsNullOrWhiteSpace(r.ItensJson)
+                        ? new List<ItemDto>()
+                        : System.Text.Json.JsonSerializer.Deserialize<List<ItemDto>>(r.ItensJson) ?? new List<ItemDto>();
                 }
 
-                if (pedidos == null || pedidos.Count == 0)
-                {
-                    return new RetornoDTO
-                    {
-                        Sucesso = false,
-                        Mensagem = "Nenhum pedido encontrado para este cliente.",
-                        Status = StatusRetorno.NotFound
-                    };
-                }
 
                 return new RetornoDTO
                 {
                     Sucesso = true,
-                    Mensagem = "Pedidos obtidos com sucesso.",
-                    Objeto = pedidos,
+                    Mensagem = rows.Count == 0 ? "Nenhum pedido encontrado para este cliente." : "Pedidos obtidos com sucesso.",
+                    Objeto = rows,
                     Status = StatusRetorno.OK
                 };
             }
@@ -419,6 +404,68 @@ namespace DELTAAPI.Service
                 };
             }
         }
+
+        public async Task<int?> ObterClienteIdPorToken(Guid token)
+        {
+            try
+            {
+
+            SqlParameter pToken = new SqlParameter("@Token", token);
+            List<ClienteIdDto> dados = await _context.Set<ClienteIdDto>()
+                .FromSqlRaw("EXEC SEC_sp_ObterClienteIdPorToken @Token", pToken)
+                .AsNoTracking()
+                .ToListAsync();
+
+            ClienteIdDto? row = dados.FirstOrDefault();
+            return row?.ClienteId;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao obter Cliente id por token.");
+                throw;
+            }
+        }
+
+        public async Task<RetornoDTO> ObterPedidoPublicoPorNumero(int pedidoId)
+        {
+            try
+            {
+                var pPedido = new SqlParameter("@PedidoID", pedidoId);
+
+                var rows = await _context.Set<PedidoCompletoDto>()
+                    .FromSqlRaw("EXEC ListarPedidoCompletoPorPedidoID @PedidoID", pPedido)
+                    .AsNoTracking()
+                    .ToListAsync();
+
+                var r = rows.FirstOrDefault();
+
+                if (r != null)
+                {
+                    r.Itens = string.IsNullOrWhiteSpace(r.ItensJson)
+                        ? new List<ItemDto>()
+                        : System.Text.Json.JsonSerializer.Deserialize<List<ItemDto>>(r.ItensJson) ?? new List<ItemDto>();
+                }
+
+                return new RetornoDTO
+                {
+                    Sucesso = r != null,
+                    Mensagem = r != null ? "Pedido obtido com sucesso." : "Pedido não encontrado.",
+                    Objeto = r, // <- retorna UM objeto, não lista
+                    Status = r != null ? StatusRetorno.OK : StatusRetorno.NotFound
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao obter pedido público por número.");
+                return new RetornoDTO
+                {
+                    Sucesso = false,
+                    Mensagem = "Problema com o servidor, por favor, aguarde pois já estamos resolvendo!",
+                    Status = StatusRetorno.InternalServerError
+                };
+            }
+        }
+
 
         #endregion
     }

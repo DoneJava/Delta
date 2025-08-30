@@ -1,12 +1,8 @@
 ﻿#region Usings
-using DELTAAPI.Data;
 using DELTAAPI.DTOs;
-using DELTAAPI.Models;
+using DELTAAPI.Model;
 using DELTAAPI.Service;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
-using System.Text.RegularExpressions;
 #endregion
 
 namespace DELTAAPI.Controllers
@@ -112,6 +108,49 @@ namespace DELTAAPI.Controllers
                 retornoDTO.Sucesso ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
                                    : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
+
+        [HttpGet("meus")]
+        public async Task<IActionResult> ObterMeusPedidos()
+        {
+            // Lê "Authorization: Bearer {guid}"
+            if (!Request.Headers.TryGetValue("Authorization", out var authHeader))
+                return Unauthorized(new { sucesso = false, mensagem = "Token não informado." });
+
+            string header = authHeader.ToString();
+            string[] parts = header.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2 || !parts[0].Equals("Bearer", StringComparison.OrdinalIgnoreCase))
+                return Unauthorized(new { sucesso = false, mensagem = "Formato do token inválido." });
+
+            if (!Guid.TryParse(parts[1], out Guid tokenGuid))
+                return Unauthorized(new { sucesso = false, mensagem = "Token inválido." });
+
+            // Reutilize seu validador central para obter o clienteId a partir do token
+            // Exemplo: int? clienteId = await _PedidoService.ObterClienteIdPorToken(tokenGuid);
+            int? clienteId = await _PedidoService.ObterClienteIdPorToken(tokenGuid);
+            if (clienteId == null)
+                return Unauthorized(new { sucesso = false, mensagem = "Token expirado ou inválido." });
+
+            RetornoDTO retornoDTO = await _PedidoService.ObterPedidosDoCliente(clienteId.Value);
+
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
+                                   : new { sucesso = false, mensagem = retornoDTO.Mensagem });
+        }
+
         #endregion
+
+        #region GET público por número (sem login)
+        [HttpGet("publico/{pedidoId:int}")]
+        public async Task<IActionResult> ObterPedidoPublico(int pedidoId)
+        {
+            var retornoDTO = await _PedidoService.ObterPedidoPublicoPorNumero(pedidoId);
+
+            return StatusCode((int)retornoDTO.Status,
+                retornoDTO.Sucesso
+                    ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
+                    : new { sucesso = false, mensagem = retornoDTO.Mensagem });
+        }
+        #endregion
+
     }
 }

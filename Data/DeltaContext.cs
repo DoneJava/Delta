@@ -22,10 +22,16 @@ namespace DELTAAPI.Data
         public DbSet<TokenMelhorEnvio> TokenMelhorEnvio { get; set; }
         public DbSet<PedidoDto> PedidtosDto { get; set; }
         public DbSet<ItemDto> ItemDto { get; set; }
+        public DbSet<FretePorEstado> FretePorEstado { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            modelBuilder.Entity<ClienteIdDto>().HasNoKey().ToView(null);
+            modelBuilder.Entity<PedidoCompletoDto>().HasNoKey().ToView(null);
+            modelBuilder.Entity<ItemDto>().HasNoKey().ToView(null);
+
+
             // Mapeamento de Cliente
             modelBuilder.Entity<Cliente>()
                 .HasKey(c => c.ClienteID); // Chave primária
@@ -118,6 +124,40 @@ namespace DELTAAPI.Data
                 .Property(c => c.DescontoValor)
                 .HasPrecision(18, 2)
                 .IsRequired(false);
+
+            modelBuilder.Entity<Cupom>()
+                .Property(c => c.FreteGratis)
+                .IsRequired(false);
+            
+            modelBuilder.Entity<FretePorEstado>(entity =>
+            {
+                entity.ToTable("FretePorEstado");
+
+                entity.HasKey(f => f.Id);
+
+                entity.Property(f => f.UF)
+                    .IsRequired()
+                    .HasMaxLength(2)
+                    .IsFixedLength(true);
+
+                entity.Property(f => f.Valor)
+                    .HasPrecision(10, 2)
+                    .IsRequired();
+
+                entity.Property(f => f.Prazo)
+                    .IsRequired();
+
+                entity.Property(f => f.CepInicial)
+                    .HasMaxLength(8)
+                    .IsFixedLength(true)
+                    .IsRequired();
+
+                entity.Property(f => f.CepFinal)
+                    .HasMaxLength(8)
+                    .IsFixedLength(true)
+                    .IsRequired();
+            });
+
 
             modelBuilder.Entity<TokenMelhorEnvio>(entity =>
             {

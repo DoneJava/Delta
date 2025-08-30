@@ -8,5 +8,6 @@
         public int? DescontoPorcentagem { get; set; }
         public decimal? DescontoValor { get; set; }
         public DateTime? Validade { get; set; }
+        public bool? FreteGratis { get; set; }
     }
 }

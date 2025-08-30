@@ -6,6 +6,8 @@ using DELTAAPI.Model;
 using DELTAAPI.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json.Linq;
+using System.Data;
 
 namespace DELTAAPI.Service
 {
@@ -165,6 +167,13 @@ namespace DELTAAPI.Service
                     Direction = System.Data.ParameterDirection.Output
                 };
 
+                SqlParameter paramFreteGratis = new SqlParameter
+                {
+                    ParameterName = "@FreteGratis",
+                    SqlDbType = System.Data.SqlDbType.Bit,
+                    Direction = System.Data.ParameterDirection.Output
+                };
+
                 SqlParameter paramValor = new SqlParameter
                 {
                     ParameterName = "@DescontoValor",
@@ -175,15 +184,16 @@ namespace DELTAAPI.Service
                 };
 
                 await _context.Database.ExecuteSqlRawAsync(
-                    "EXEC ValidarCupom @Codigo, @Valido OUTPUT, @DescontoPorcentagem OUTPUT, @DescontoValor OUTPUT",
-                    paramCodigo, paramValido, paramPorcentagem, paramValor
+                    "EXEC ValidarCupom @Codigo, @Valido OUTPUT, @DescontoPorcentagem OUTPUT, @DescontoValor OUTPUT, @FreteGratis OUTPUT",
+                    paramCodigo, paramValido, paramPorcentagem, paramValor, paramFreteGratis
                 );
 
                 var resultado = new CupomResultadoDto
                 {
                     Valido = (bool)(paramValido.Value ?? false),
                     DescontoPorcentagem = paramPorcentagem.Value != DBNull.Value ? (int)paramPorcentagem.Value : 0,
-                    DescontoValor = paramValor.Value != DBNull.Value ? (decimal)paramValor.Value : 0
+                    DescontoValor = paramValor.Value != DBNull.Value ? (decimal)paramValor.Value : 0,
+                    FreteGratis = paramFreteGratis.Value != DBNull.Value ? (bool)paramFreteGratis.Value : false
                 };
 
                 if (!resultado.Valido)
@@ -276,7 +286,7 @@ namespace DELTAAPI.Service
 
                 if (!string.IsNullOrWhiteSpace(dto.Cupom))
                 {
-                    var retornoCupom = await ValidarCupom(dto.Cupom); // Chama o ÚNICO método
+                    var retornoCupom = await ValidarCupom(dto.Cupom);
                     if (retornoCupom.Sucesso && retornoCupom.Objeto is CupomResultadoDto cupomOk)
                         cupomResultado = cupomOk;
                 }
@@ -304,7 +314,7 @@ namespace DELTAAPI.Service
                 decimal valorFinal = valorTotal - desconto;
                 if (valorFinal < 0) valorFinal = 0;
 
-                // Frete
+                // Calcular frete usando a service real
                 string? cep = dto.Cep;
 
                 if (string.IsNullOrWhiteSpace(cep) && !string.IsNullOrWhiteSpace(tokenStr))
@@ -322,9 +332,25 @@ namespace DELTAAPI.Service
 
                 if (!string.IsNullOrWhiteSpace(cep))
                 {
-                    // Simula frete: ajuste se usar Service real.
-                    decimal valorFrete = 20; // Exemplo fixo
-                    valorFinal += valorFrete;
+                    var produtosFrete = dto.Produtos?.Select(p => new ProdutoFreteDto
+                    {
+                        IdProduto = p.IdProduto,
+                        Quantidade = p.Quantidade,
+                        Tamanho = p.Tamanho ?? "-"
+                    }).ToList() ?? new();
+
+                    var retornoFrete = await CalcularFrete(new FreteCalculoDto
+                    {
+                        Cep = cep,
+                        Produtos = produtosFrete,
+                        Cupom = dto.Cupom
+                    });
+
+                    if (retornoFrete.Sucesso && retornoFrete.Objeto is List<FreteResultadoDto> fretes && fretes.Any())
+                    {
+                        decimal valorFrete = (fretes.First().Valor ?? 0);
+                        valorFinal += valorFrete;
+                    }
                 }
 
                 valorFinal = Math.Round(valorFinal, 2, MidpointRounding.AwayFromZero);
@@ -627,6 +653,145 @@ namespace DELTAAPI.Service
                 {
                     Sucesso = false,
                     Mensagem = "Erro interno ao consultar status do Pix.",
+                    Status = StatusRetorno.InternalServerError
+                };
+            }
+        }
+
+        public async Task<RetornoDTO> CalcularFrete(FreteCalculoDto frete)
+        {
+            try
+            {
+                if (frete.Token != null)
+                {
+                    Cliente? cliente = await _context.Clientes
+                    .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Token == frete.Token);
+
+                    frete.Cep = cliente.CEP;
+                }
+                using var connection = new SqlConnection(_context.Database.GetConnectionString());
+                await connection.OpenAsync();
+
+                using var command = new SqlCommand("Frete_sp_ObterValorPrazoPorCep", connection)
+                {
+                    CommandType = CommandType.StoredProcedure
+                };
+                command.Parameters.AddWithValue("@CepUsuario", frete.Cep);
+
+                using var reader = await command.ExecuteReaderAsync();
+
+                if (await reader.ReadAsync())
+                {
+                    decimal valorBase = reader.GetDecimal(reader.GetOrdinal("Valor"));
+                    int prazo = reader.GetInt32(reader.GetOrdinal("Prazo"));
+
+                    int totalQuantidade = frete.Produtos.Sum(p => p.Quantidade);
+                    int trios = totalQuantidade / 3;
+                    decimal adicional = trios * 3;
+
+                    if (totalQuantidade > 10)
+                    {
+                        return new RetornoDTO
+                        {
+                            Sucesso = false,
+                            Objeto = new List<FreteResultadoDto>
+                {
+                    new FreteResultadoDto
+                    {
+                        Transportadora = "Desconhecida",
+                        Valor = 0,
+                        PrazoEntrega = 0,
+                        Mensagem = "Nos desculpe, mas atualmente enviamos apenas 10 peças por pedido. Por favor, ajuste a quantidade."
+                    }
+                },
+                            Mensagem = "Nos desculpe, mas atualmente enviamos apenas 10 peças por pedido. Por favor, ajuste a quantidade.",
+                            Status = StatusRetorno.BadRequest
+                        };
+
+                    }
+
+                    if (!string.IsNullOrEmpty(frete.Cupom))
+                    {
+                        RetornoDTO cupomFrete = new();
+
+                        cupomFrete = await ValidarCupom(frete.Cupom);
+
+                        if (cupomFrete.Objeto.FreteGratis)
+                        {
+                            var resultadoFreteGratis = new FreteResultadoDto
+                            {
+                                Transportadora = "Entrega Fixa",
+                                Valor = 0,
+                                PrazoEntrega = prazo
+                            };
+
+                            return new RetornoDTO
+
+                            {
+                                Sucesso = true,
+                                Objeto = new List<FreteResultadoDto> { resultadoFreteGratis },
+                                Mensagem = "Frete calculado com sucesso.",
+                                Status = StatusRetorno.OK
+                            };
+                        }
+                    }
+
+                    valorBase += adicional;
+
+                    var resultado = new FreteResultadoDto
+                    {
+                        Transportadora = "Entrega Fixa",
+                        Valor = valorBase,
+                        PrazoEntrega = prazo
+                    };
+
+                    return new RetornoDTO
+                    {
+                        Sucesso = true,
+                        Objeto = new List<FreteResultadoDto> { resultado },
+                        Mensagem = "Frete calculado com sucesso.",
+                        Status = StatusRetorno.OK
+                    };
+                }
+                else
+                {
+                    return new RetornoDTO
+                    {
+                        Sucesso = true,
+                        Objeto = new List<FreteResultadoDto>
+                {
+                    new FreteResultadoDto
+                    {
+                        Transportadora = "Desconhecida",
+                        Valor = 0,
+                        PrazoEntrega = 0,
+                        Mensagem = "Infelizmente ainda não realizamos entregas para esse CEP."
+                    }
+                },
+                        Mensagem = "Infelizmente ainda não realizamos entregas para esse CEP.",
+                        Status = StatusRetorno.OK
+                    };
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao calcular frete");
+
+                return new RetornoDTO
+                {
+                    Sucesso = false,
+                    Objeto = new List<FreteResultadoDto>
+            {
+                new FreteResultadoDto
+                {
+                    Transportadora = "Erro",
+                    Valor = -1,
+                    PrazoEntrega = 0,
+                    Mensagem = "Erro interno ao calcular o frete."
+                }
+            },
+                    Mensagem = "Erro interno ao calcular o frete.",
                     Status = StatusRetorno.InternalServerError
                 };
             }
