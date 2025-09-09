@@ -11,7 +11,7 @@
         public string? ImagemUrl { get; set; }
         public List<string>? TamanhosDisponiveis { get; set; }
         public string ? Categorias { get; set; }
+        public long QtdVisualizacao { get; set; }
     }
-
 }
 

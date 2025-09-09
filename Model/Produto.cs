@@ -10,4 +10,6 @@
     public string? Categorias { get; set; }
     public string? TamanhosDisponiveis { get; set; }
     public bool? Destaque { get; set; }
+    public long? QtdVisualizacao { get; set; }
+    public int? QtdCompras { get; set; }
 }

@@ -28,6 +28,8 @@ namespace DELTAAPI.DTOs
         public decimal PrecoUnitario { get; set; }   // <- tenha este nome
         public string Nome { get; set; } = "";
         public string ImagemPrincipal { get; set; } = "";
+        public string? Tamanho { get; set; }
+        public string? TamanhoSelecionado { get; set; }     // alias, também do I.Tamanho
         public string? TamanhosDisponiveis { get; set; }
     }
 

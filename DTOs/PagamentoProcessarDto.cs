@@ -8,6 +8,7 @@
         public string? DadosEnvio { get; set; }
         public string? Cupom { get; set; }
         public string? Cep { get; set; }
+        public string? GatewayPaymentId { get; set; }
     }
 
     public class ProdutoCompraDto

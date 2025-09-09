@@ -10,7 +10,7 @@ namespace DELTAAPI.Models
 
         public MetodoPagamento MetodoPagamento { get; set; }  // Agora é enum
         public StatusPagamento StatusPagamento { get; set; }  // Agora é enum
-
+        public string DocumentoPagador { get; set; }
         public DateTime DataPagamento { get; set; } = DateTime.Now;
         public Pedido Pedido { get; set; }
     }

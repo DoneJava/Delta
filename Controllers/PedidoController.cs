@@ -3,16 +3,18 @@ using DELTAAPI.DTOs;
 using DELTAAPI.Model;
 using DELTAAPI.Service;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.DataAnnotations;
 #endregion
 
 namespace DELTAAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Tags("Pedidos")]
     public class PedidoController : ControllerBase
     {
         #region Fields
-        private PedidoService _PedidoService;
+        private readonly PedidoService _PedidoService;
         #endregion
 
         #region Constructor
@@ -48,6 +50,8 @@ namespace DELTAAPI.Controllers
 
         #region POST Criar
         [HttpPost("criar")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
         public async Task<IActionResult> CriarPedido([FromBody] PedidoCreateDto dto)
         {
             var retornoDTO = await _PedidoService.CriarPedido(dto);
@@ -60,6 +64,8 @@ namespace DELTAAPI.Controllers
 
         #region PUT Atualizar
         [HttpPut("atualizar/{id}")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
         public async Task<IActionResult> AtualizarPedido(int id, [FromBody] PedidoUpdateDto dto)
         {
             var retornoDTO = await _PedidoService.AtualizarPedido(id, dto);
@@ -84,6 +90,8 @@ namespace DELTAAPI.Controllers
 
         #region POST Registrar Contato
         [HttpPost("registrar-contato")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
         public async Task<IActionResult> RegistrarContato([FromBody] ContatoDto dto)
         {
             string? tokenStr = null;
@@ -112,7 +120,6 @@ namespace DELTAAPI.Controllers
         [HttpGet("meus")]
         public async Task<IActionResult> ObterMeusPedidos()
         {
-            // Lê "Authorization: Bearer {guid}"
             if (!Request.Headers.TryGetValue("Authorization", out var authHeader))
                 return Unauthorized(new { sucesso = false, mensagem = "Token não informado." });
 
@@ -124,32 +131,63 @@ namespace DELTAAPI.Controllers
             if (!Guid.TryParse(parts[1], out Guid tokenGuid))
                 return Unauthorized(new { sucesso = false, mensagem = "Token inválido." });
 
-            // Reutilize seu validador central para obter o clienteId a partir do token
-            // Exemplo: int? clienteId = await _PedidoService.ObterClienteIdPorToken(tokenGuid);
             int? clienteId = await _PedidoService.ObterClienteIdPorToken(tokenGuid);
             if (clienteId == null)
                 return Unauthorized(new { sucesso = false, mensagem = "Token expirado ou inválido." });
 
-            RetornoDTO retornoDTO = await _PedidoService.ObterPedidosDoCliente(clienteId.Value);
+            var retornoDTO = await _PedidoService.ObterPedidosDoCliente(clienteId.Value);
 
             return StatusCode((int)retornoDTO.Status,
                 retornoDTO.Sucesso ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
                                    : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
-
         #endregion
 
-        #region GET público por número (sem login)
-        [HttpGet("publico/{pedidoId:int}")]
-        public async Task<IActionResult> ObterPedidoPublico(int pedidoId)
-        {
-            var retornoDTO = await _PedidoService.ObterPedidoPublicoPorNumero(pedidoId);
+        #region GET público por número (sem login) - NOVO FLUXO
 
-            return StatusCode((int)retornoDTO.Status,
-                retornoDTO.Sucesso
-                    ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
-                    : new { sucesso = false, mensagem = retornoDTO.Mensagem });
+        public sealed class PedidoPublicoRequest
+        {
+            [Required]
+            [Range(1, int.MaxValue)]
+            public int PedidoId { get; set; }
+
+            [Required]
+            [StringLength(20)]
+            public string CPF { get; set; } = string.Empty; // com/sem máscara
         }
+
+        [HttpPost("publico/buscar")]
+        [Consumes("application/json")]
+        [Produces("application/json")]
+        [ProducesResponseType(typeof(PedidoCompletoDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(object), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> BuscarPedidoPublico([FromBody] PedidoPublicoRequest req)
+        {
+            if (!ModelState.IsValid)
+                return BadRequest(new { sucesso = false, mensagem = "Dados inválidos.", erros = ModelState });
+
+            // certifique-se que o nome do field DI está correto (_pedidoService)
+            var ret = await _PedidoService.ObterPedidoPublicoPorNumeroECpf(req.PedidoId, req.CPF);
+
+            return StatusCode((int)ret.Status,
+                ret.Sucesso
+                    ? ret.Objeto ?? new { mensagem = ret.Mensagem }
+                    : new { sucesso = false, mensagem = ret.Mensagem });
+        }
+
+        // ponte de compatibilidade (mantém rota antiga fora do Swagger)
+        [ApiExplorerSettings(IgnoreApi = true)]
+        [HttpGet("publico/{pedidoId:int}")]
+        public IActionResult Obsoleto(int pedidoId, [FromQuery] string? cpf = null)
+        {
+            return BadRequest(new
+            {
+                sucesso = false,
+                mensagem = "Endpoint alterado. Use POST /api/pedido/publico/buscar com JSON { pedidoId, cpf }."
+            });
+        }
+
         #endregion
 
     }

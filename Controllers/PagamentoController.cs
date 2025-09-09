@@ -141,7 +141,7 @@ namespace DELTAAPI.Controllers
             var retornoDTO = await _pagamentoService.ProcessarPagamento(dto, tokenStr);
 
             return StatusCode((int)retornoDTO.Status,
-                retornoDTO.Sucesso ? retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem }
+                retornoDTO.Sucesso ? (retornoDTO.Objeto ?? new { mensagem = retornoDTO.Mensagem })
                                    : new { sucesso = false, mensagem = retornoDTO.Mensagem });
         }
         #endregion
@@ -182,6 +182,19 @@ namespace DELTAAPI.Controllers
         {
             // Mantido exatamente como o original
             return StatusCode(405, "Pagamentos não podem ser deletados.");
+        }
+        #endregion
+
+        #region Cartão
+        [HttpPost("mercadopago/cartao/pagar")]
+        public async Task<IActionResult> PagarCartaoComMercadoPago([FromBody] CardPayDto dto)
+        {
+            string? tokenStr = Request?.Headers.Authorization.ToString().Replace("Bearer ", "");
+            var retorno = await _pagamentoService.PagarCartaoMercadoPago(dto, tokenStr);
+
+            return StatusCode((int)retorno.Status,
+                retorno.Sucesso ? (retorno.Objeto ?? new { mensagem = retorno.Mensagem })
+                                : new { sucesso = false, mensagem = retorno.Mensagem });
         }
         #endregion
 

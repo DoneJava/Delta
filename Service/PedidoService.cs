@@ -1,11 +1,11 @@
-﻿using DELTAAPI.Controllers;
-using DELTAAPI.Data;
+﻿using DELTAAPI.Data;
 using DELTAAPI.DTOs;
 using DELTAAPI.Model;
 using DELTAAPI.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
+using System.Data;
 
 namespace DELTAAPI.Service
 {
@@ -22,6 +22,11 @@ namespace DELTAAPI.Service
             _context = context;
             _logger = logger;
         }
+        #endregion
+
+        #region Helpers
+        private static string NormalizeCpfDigits(string? cpf)
+            => new string((cpf ?? string.Empty).Where(char.IsDigit).ToArray());
         #endregion
 
         #region Métodos Públicos
@@ -328,7 +333,7 @@ namespace DELTAAPI.Service
 
                 // Extrair ID de pedido no texto [ID]
                 Match match = Regex.Match(dto.Assunto + " " + dto.Mensagem, "\\[(\\d+)\\]");
-                if (match.Success && Int32.TryParse(match.Groups[1].Value, out int idPedidoEncontrado))
+                if (match.Success && int.TryParse(match.Groups[1].Value, out int idPedidoEncontrado))
                 {
                     bool pedidoExiste = await _context.Pedidos
                         .AsNoTracking()
@@ -371,9 +376,9 @@ namespace DELTAAPI.Service
         {
             try
             {
-                SqlParameter pCliente = new SqlParameter("@ClienteID", clienteId);
-                List<PedidoCompletoDto> rows = await _context.Set<PedidoCompletoDto>()
-                    .FromSqlRaw("EXEC ListarPedidosCompletoPorClienteID @ClienteID", pCliente)
+                var pCliente = new SqlParameter("@ClienteID", clienteId);
+                var rows = await _context.Set<PedidoCompletoDto>()
+                    .FromSqlRaw("EXEC dbo.ListarPedidosCompletoPorClienteID @ClienteID", pCliente)
                     .AsNoTracking()
                     .ToListAsync();
 
@@ -382,8 +387,39 @@ namespace DELTAAPI.Service
                     r.Itens = string.IsNullOrWhiteSpace(r.ItensJson)
                         ? new List<ItemDto>()
                         : System.Text.Json.JsonSerializer.Deserialize<List<ItemDto>>(r.ItensJson) ?? new List<ItemDto>();
-                }
 
+                    foreach (var it in r.Itens)
+                    {
+                        if (string.IsNullOrEmpty(it.TamanhoSelecionado))
+                            it.TamanhoSelecionado = it.Tamanho ?? "";
+                    }
+
+                    // Fallback de desconto (se a proc não popular por algum motivo)
+                    {
+                        // 1) Bruto: usa o que veio da proc; se vier 0, soma pelos itens
+                        decimal bruto = r.ValorItensBruto > 0m
+                            ? r.ValorItensBruto
+                            : (r.Itens?.Sum(i =>
+                                    // PrecoUnitario é decimal não anulável
+                                    (i.PrecoUnitario > 0m ? i.PrecoUnitario : 0m) *
+                                    // Quantidade é int não anulável
+                                    (i.Quantidade > 0 ? i.Quantidade : 1)
+                               ) ?? 0m);
+
+                        // 2) Líquido: total - frete (travado em zero)
+                        decimal liquido = r.ValorTotal - r.ValorFrete;
+                        if (liquido < 0m) liquido = 0m;
+
+                        // 3) Desconto calculado (travado em zero)
+                        decimal descontoCalc = bruto - liquido;
+                        if (descontoCalc < 0m) descontoCalc = 0m;
+
+                        // 4) Usa o calculado se o campo veio zerado/negativo
+                        // Se 'DescontoAplicado' for decimal não anulável:
+                        if (r.DescontoAplicado <= 0m)
+                            r.DescontoAplicado = descontoCalc;
+                    }
+                }
 
                 return new RetornoDTO
                 {
@@ -409,15 +445,14 @@ namespace DELTAAPI.Service
         {
             try
             {
+                SqlParameter pToken = new SqlParameter("@Token", token);
+                List<ClienteIdDto> dados = await _context.Set<ClienteIdDto>()
+                    .FromSqlRaw("EXEC SEC_sp_ObterClienteIdPorToken @Token", pToken)
+                    .AsNoTracking()
+                    .ToListAsync();
 
-            SqlParameter pToken = new SqlParameter("@Token", token);
-            List<ClienteIdDto> dados = await _context.Set<ClienteIdDto>()
-                .FromSqlRaw("EXEC SEC_sp_ObterClienteIdPorToken @Token", pToken)
-                .AsNoTracking()
-                .ToListAsync();
-
-            ClienteIdDto? row = dados.FirstOrDefault();
-            return row?.ClienteId;
+                ClienteIdDto? row = dados.FirstOrDefault();
+                return row?.ClienteId;
             }
             catch (Exception ex)
             {
@@ -426,14 +461,27 @@ namespace DELTAAPI.Service
             }
         }
 
-        public async Task<RetornoDTO> ObterPedidoPublicoPorNumero(int pedidoId)
+        // Novo fluxo: número + CPF (somente 11 dígitos)
+        public async Task<RetornoDTO> ObterPedidoPublicoPorNumeroECpf(int pedidoId, string cpf)
         {
             try
             {
+                var cpfDigits = NormalizeCpfDigits(cpf);
+                if (cpfDigits.Length != 11)
+                {
+                    return new RetornoDTO
+                    {
+                        Sucesso = false,
+                        Mensagem = "CPF inválido. Informe 11 dígitos (com ou sem máscara).",
+                        Status = StatusRetorno.BadRequest
+                    };
+                }
+
                 var pPedido = new SqlParameter("@PedidoID", pedidoId);
+                var pCpf = new SqlParameter("@CPF", SqlDbType.VarChar, 20) { Value = cpfDigits };
 
                 var rows = await _context.Set<PedidoCompletoDto>()
-                    .FromSqlRaw("EXEC ListarPedidoCompletoPorPedidoID @PedidoID", pPedido)
+                    .FromSqlRaw("EXEC dbo.ListarPedidoCompletoPorPedidoID_E_CPF @PedidoID, @CPF", pPedido, pCpf)
                     .AsNoTracking()
                     .ToListAsync();
 
@@ -441,22 +489,35 @@ namespace DELTAAPI.Service
 
                 if (r != null)
                 {
+                    // ItensJson -> Itens (com PrecoUnitario e Tamanho/TamanhoSelecionado)
                     r.Itens = string.IsNullOrWhiteSpace(r.ItensJson)
                         ? new List<ItemDto>()
                         : System.Text.Json.JsonSerializer.Deserialize<List<ItemDto>>(r.ItensJson) ?? new List<ItemDto>();
+
+                    // segurança: garante propriedades esperadas
+                    foreach (var it in r.Itens)
+                    {
+                        // usa somente o unitário salvo no pedido (sem cupom)
+                        if (it.PrecoUnitario == 0 && it.PrecoUnitario > 0)
+                            it.PrecoUnitario = it.PrecoUnitario;
+
+                        // alias do tamanho
+                        if (string.IsNullOrEmpty(it.TamanhoSelecionado))
+                            it.TamanhoSelecionado = it.Tamanho ?? it.Tamanho ?? "";
+                    }
                 }
 
                 return new RetornoDTO
                 {
                     Sucesso = r != null,
                     Mensagem = r != null ? "Pedido obtido com sucesso." : "Pedido não encontrado.",
-                    Objeto = r, // <- retorna UM objeto, não lista
+                    Objeto = r,
                     Status = r != null ? StatusRetorno.OK : StatusRetorno.NotFound
                 };
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao obter pedido público por número.");
+                _logger.LogError(ex, "Erro ao obter pedido público por número e CPF.");
                 return new RetornoDTO
                 {
                     Sucesso = false,
@@ -465,7 +526,6 @@ namespace DELTAAPI.Service
                 };
             }
         }
-
 
         #endregion
     }

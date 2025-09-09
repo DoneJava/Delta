@@ -16,6 +16,9 @@ namespace DELTAAPI.DTOs
         public string StatusEnvio { get; set; } = "";
         public string CodigoRastreamento { get; set; } = "";
         public DateTime? DataEnvio { get; set; }
+        public decimal ValorItensBruto { get; set; }
+        public decimal ValorItensLiquido { get; set; }
+        public decimal DescontoAplicado { get; set; }     // (bruto - líquido)
 
         public int MetodoPagamento { get; set; }        // INT!
         public int StatusPagamento { get; set; }        // INT!

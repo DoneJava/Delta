@@ -2,6 +2,7 @@
 using DELTAAPI.Model;
 using DELTAAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using static DELTAAPI.Service.PagamentoService;
 
 namespace DELTAAPI.Data
 {
@@ -23,6 +24,11 @@ namespace DELTAAPI.Data
         public DbSet<PedidoDto> PedidtosDto { get; set; }
         public DbSet<ItemDto> ItemDto { get; set; }
         public DbSet<FretePorEstado> FretePorEstado { get; set; }
+        public DbSet<Associado> Associados { get; set; }
+        public DbSet<Versiculos> Versiculos { get; set; }
+        public DbSet<BibliaLivroAlias> BibliaLivroAlias { get; set; }
+        public DbSet<Visita> Visitas { get; set; }
+        public DbSet<PageView> PageViews { get; set; }
 
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -30,6 +36,18 @@ namespace DELTAAPI.Data
             modelBuilder.Entity<ClienteIdDto>().HasNoKey().ToView(null);
             modelBuilder.Entity<PedidoCompletoDto>().HasNoKey().ToView(null);
             modelBuilder.Entity<ItemDto>().HasNoKey().ToView(null);
+            modelBuilder.Entity<FreteValorTmpDTO>().HasNoKey();
+
+            modelBuilder.Entity<Associado>(e =>
+            {
+                e.ToTable("Associado");
+                e.HasKey(x => x.AssociadoId);
+                e.Property(x => x.Nome).HasMaxLength(120).IsRequired();
+                e.Property(x => x.Documento).HasMaxLength(20);
+                e.Property(x => x.Codigo).HasMaxLength(40).IsRequired();
+                e.Property(x => x.Ativo).IsRequired();
+                e.Property(x => x.CriadoEmUtc).HasColumnType("datetime2(3)");
+            });
 
 
             // Mapeamento de Cliente
@@ -107,6 +125,14 @@ namespace DELTAAPI.Data
 
             modelBuilder.Entity<Contato>().ToTable("Contato");
 
+            // Mapeamento de Versiculos
+            modelBuilder.Entity<Versiculos>()
+                .HasKey(c => c.VersiculoId); // Chave primária
+
+            // Mapeamento de BibliaLivroAlias
+            modelBuilder.Entity<BibliaLivroAlias>()
+                .HasKey(c => c.Id); // Chave primária
+
 
             modelBuilder.Entity<ProdutoDto>().HasNoKey(); // ← necessário
             modelBuilder.Entity<ItemDto>().HasNoKey(); // ← necessário
@@ -156,6 +182,81 @@ namespace DELTAAPI.Data
                     .HasMaxLength(8)
                     .IsFixedLength(true)
                     .IsRequired();
+            });
+
+            modelBuilder.Entity<Visita>(e =>
+            {
+                e.ToTable("Visita");
+                e.HasKey(v => v.VisitaId);
+
+                e.Property(v => v.VisitaId)
+                    .ValueGeneratedOnAdd();
+
+                e.Property(v => v.Dia)
+                    .HasColumnType("date")
+                    .IsRequired();
+
+                e.Property(v => v.AnonId)
+                    .HasColumnType("uniqueidentifier");
+
+                e.Property(v => v.Url)
+                    .HasMaxLength(500);
+
+                e.Property(v => v.Referrer)
+                    .HasMaxLength(500);
+
+                e.Property(v => v.UtmSource)
+                    .HasMaxLength(100);
+
+                e.Property(v => v.UtmMedium)
+                    .HasMaxLength(100);
+
+                e.Property(v => v.UtmCampaign)
+                    .HasMaxLength(100);
+
+                e.Property(v => v.Ip)
+                    .HasMaxLength(45)           // IPv6 cabe
+                    .IsUnicode(false);
+
+                e.Property(v => v.UserAgent)
+                    .HasMaxLength(400);
+
+                e.Property(v => v.CreatedAtUtc)
+                    .HasColumnType("datetime2(0)")
+                    .HasDefaultValueSql("SYSUTCDATETIME()")
+                    .IsRequired();
+
+                // Índice único por (Dia, AnonId) quando AnonId não é nulo
+                e.HasIndex(v => new { v.Dia, v.AnonId })
+                    .IsUnique()
+                    .HasFilter("[AnonId] IS NOT NULL")
+                    .HasDatabaseName("UX_Visita_Dia_AnonId");
+            });
+
+            modelBuilder.Entity<Visita>(e =>
+            {
+                e.ToTable("Visita");
+                e.HasKey(x => x.VisitaId);
+                e.Property(x => x.Url).HasMaxLength(800);
+                e.Property(x => x.Referrer).HasMaxLength(800);
+                e.Property(x => x.UtmSource).HasMaxLength(100);
+                e.Property(x => x.UtmMedium).HasMaxLength(100);
+                e.Property(x => x.UtmCampaign).HasMaxLength(100);
+                e.Property(x => x.UserAgent).HasMaxLength(400);
+                e.Property(x => x.Ip).HasMaxLength(45);
+            });
+
+            modelBuilder.Entity<PageView>(e =>
+            {
+                e.ToTable("PageView");
+                e.HasKey(x => x.PageViewId);
+                e.Property(x => x.CriadoEmBrt)
+                 .HasColumnType("datetime2(0)")
+                 .HasDefaultValueSql("CAST(SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'E. South America Standard Time' AS DATETIME2(0))");
+                e.Property(x => x.Route).HasMaxLength(200).IsRequired();
+                e.Property(x => x.Url).HasMaxLength(800);
+                e.Property(x => x.UserAgent).HasMaxLength(400);
+                e.Property(x => x.Ip).HasMaxLength(45);
             });
 
 

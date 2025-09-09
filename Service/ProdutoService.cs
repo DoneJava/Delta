@@ -3,6 +3,7 @@ using DELTAAPI.DTOs;
 using DELTAAPI.Model;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace DELTAAPI.Service
 {
@@ -134,46 +135,70 @@ namespace DELTAAPI.Service
         {
             try
             {
-                SqlParameter param = new SqlParameter("@ProdutoID", id);
+                var connection = _context.Database.GetDbConnection();
+                if (connection.State != ConnectionState.Open)
+                    await connection.OpenAsync();
 
-                using (var command = _context.Database.GetDbConnection().CreateCommand())
+                await using var transaction = connection.BeginTransaction();
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+
+                // 1) Incrementa a visualização
+                command.CommandText = "EXEC NovaVisualizacaoProduto @ProdutoID";
+                command.Parameters.Clear();
+                command.Parameters.Add(new SqlParameter("@ProdutoID", id));
+                await command.ExecuteNonQueryAsync();
+
+                // 2) Busca os detalhes do produto
+                command.CommandText = "EXEC ObterProdutoPorIDDetalhes @ProdutoID";
+                command.Parameters.Clear();
+                command.Parameters.Add(new SqlParameter("@ProdutoID", id));
+
+                await using (var reader = await command.ExecuteReaderAsync())
                 {
-                    command.CommandText = "EXEC ObterProdutoPorIDDetalhes @ProdutoID";
-                    command.Parameters.Add(param);
-
-                    await _context.Database.GetDbConnection().OpenAsync();
-
-                    using (var reader = await command.ExecuteReaderAsync())
+                    if (await reader.ReadAsync())
                     {
-                        if (await reader.ReadAsync())
-                        {
-                            ProdutoDetalhesDto dto = new ProdutoDetalhesDto
-                            {
-                                ProdutoID = reader.GetInt32(reader.GetOrdinal("ProdutoID")),
-                                Nome = reader.GetString(reader.GetOrdinal("Nome")),
-                                Descricao = reader.GetString(reader.GetOrdinal("Descricao")),
-                                Preco = reader.GetDecimal(reader.GetOrdinal("Preco")),
-                                Estoque = reader.GetInt32(reader.GetOrdinal("Estoque")),
-                                DataCadastro = reader.GetDateTime(reader.GetOrdinal("DataCadastro")),
-                                ImagemUrl = $"{baseUrl}/api/produto/imagem-arquivo/{Path.GetFileName(reader.GetString(reader.GetOrdinal("ImagemPrincipal")))}",
-                                TamanhosDisponiveis = reader.IsDBNull(reader.GetOrdinal("TamanhosDisponiveis"))
-                                    ? null
-                                    : reader.GetString(reader.GetOrdinal("TamanhosDisponiveis"))
-                                        .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                                        .Select(t => t.Trim().ToUpper())
-                                        .ToList()
-                            };
+                        // Defensive: ImagemPrincipal pode ser nula
+                        string? imagemPrincipal = !reader.IsDBNull(reader.GetOrdinal("ImagemPrincipal"))
+                            ? reader.GetString(reader.GetOrdinal("ImagemPrincipal"))
+                            : null;
 
-                            return new RetornoDTO
-                            {
-                                Sucesso = true,
-                                Mensagem = "Produto obtido com sucesso.",
-                                Objeto = dto,
-                                Status = StatusRetorno.OK
-                            };
-                        }
+                        ProdutoDetalhesDto dto = new ProdutoDetalhesDto
+                        {
+                            ProdutoID = reader.GetInt32(reader.GetOrdinal("ProdutoID")),
+                            Nome = reader.GetString(reader.GetOrdinal("Nome")),
+                            Descricao = reader.GetString(reader.GetOrdinal("Descricao")),
+                            Preco = reader.GetDecimal(reader.GetOrdinal("Preco")),
+                            Estoque = reader.GetInt32(reader.GetOrdinal("Estoque")),
+                            DataCadastro = reader.GetDateTime(reader.GetOrdinal("DataCadastro")),
+                            ImagemUrl = !string.IsNullOrWhiteSpace(imagemPrincipal)
+                                ? $"{baseUrl}/api/produto/imagem-arquivo/{Path.GetFileName(imagemPrincipal)}"
+                                : null,
+                            TamanhosDisponiveis = reader.IsDBNull(reader.GetOrdinal("TamanhosDisponiveis"))
+                                ? null
+                                : reader.GetString(reader.GetOrdinal("TamanhosDisponiveis"))
+                                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                    .Select(t => t.Trim().ToUpper())
+                                    .ToList(),
+                            // BIGINT no SQL -> Int64 no C#
+                            QtdVisualizacao = reader.GetInt64(reader.GetOrdinal("QtdVisualizacao"))
+                        };
+
+                        await reader.CloseAsync();
+                        await transaction.CommitAsync();
+
+                        return new RetornoDTO
+                        {
+                            Sucesso = true,
+                            Mensagem = "Produto obtido com sucesso.",
+                            Objeto = dto,
+                            Status = StatusRetorno.OK
+                        };
                     }
                 }
+
+                // Se não encontrou o produto, desfaz a visualização incluída (opcional).
+                await transaction.RollbackAsync();
 
                 return new RetornoDTO
                 {
